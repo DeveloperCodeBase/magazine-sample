@@ -1,0 +1,212 @@
+﻿<html>
+  <head><script  src="./pts.min.js"></script></head>
+
+  <body style="font-family: sans-serif; margin: 0;">
+    <div id="pt" style="width: 100%; height: 400px; margin:  0;"></div>
+    <div style="padding: 20px 0; font-family: sans-serif; font-size: 0.8em; color: #9ab; text-align: center;">
+     
+     </div>
+
+    <script>
+
+
+window.demoDescription = "Use convex hull to envelope a set of points. Move the pointer to modify the boundary.";
+
+Pts.quickStart( "#pt", "transparent" );
+
+(function() {
+
+var de = new Delaunay(); // Delaunay is a Group of Pts
+var triangles = []; // store the delaunay triangles
+var cells = []; // store the voronoi cells
+var lastPt = new Pt();
+
+
+// A simple function to repel the points if they are too close
+let repel = (size) => {
+  for (let k=0, len=de.length; k<len; k++) {
+    for (let i=0, len=de.length; i<len; i++) {
+      if ( i !== k ) {
+        let d =  de[k].$subtract( de[i] );
+        if ( d.magnitudeSq() < size*size ) {
+          de[k].subtract( d.$divide( -size/3 ) );
+          de[i].subtract( d.$divide( size/3 ) );
+        }
+      }
+    }
+  }
+}
+
+
+space.add({ 
+
+  start: (bound) => {
+
+    // Create 20 random points and generate initial tessellations
+    de = Create.delaunay( Create.distributeRandom( space.innerBound, 20 ) );
+    triangles = de.delaunay();
+    cells= de.voronoi();
+  },
+
+  animate: (time, ftime) => {
+    
+    // draw the cells
+    form.strokeOnly("#fff", 1).polygons( triangles );
+    form.fill("#0c9").points( de, 2, "circle" );      
+    form.strokeOnly("#0fc").polygons( cells );
+
+    // If more than 100 pts are added, do fancy things
+    if (de.length >= 100) {
+      de[de.length-1] = space.pointer;
+      repel( 50 );
+      triangles = de.delaunay();
+      cells= de.voronoi();
+
+      // Guides: Show the neighbor cells of the point nearest to pointer
+      let nearIndex = Polygon.nearestPt( de, space.pointer );
+      de.neighbors( nearIndex, true ).map( (n) => {
+        form.strokeOnly("rgba(255,255,0, .9)", 3).polygon( n.triangle );
+        form.strokeOnly("rgba(255,255,0,.3)", 1).circle( n.circle );
+        form.fillOnly("#fe6", 1).point( n.circle[0], 2 );
+      });
+    }
+
+  },
+
+  action: (type, x, y) => {
+
+    // Add up to 100 points on mouse move
+    if (type == "move" && de.length < 100) {
+      let p = new Pt(x,y);
+      if (lastPt.$subtract(p).magnitudeSq() > 400) {
+        lastPt = p;
+        de.push( p );
+        triangles = de.delaunay();
+        cells= de.voronoi();
+      }
+    }
+  }
+
+});
+
+//// ----
+
+
+space.bindMouse().bindTouch().play();
+
+})();
+//-----------------------------------------
+
+(function() {
+
+  let pts;
+
+  space.add({ 
+    start: (bound) => {
+      // Make a face with 30 radial points with slight randomness
+      radius = space.size.minValue().value/3;
+      pts = Create.radialPts( space.center, radius, 0  );
+      pts.map( p => p.add( 1*(Math.random() - Math.random()) ) )
+      
+    },
+
+    animate: (time, ftime) => {
+
+      //pts[pts.length-1] = space.pointer;
+
+      // convex hull the points
+      let hull = Polygon.convexHull( pts );
+
+      // eyes' positions
+      let left = space.center.$subtract( 50 );
+      let right = space.center.$add( 50, -50 );
+      let leftB = left.clone().toAngle( space.pointer.$subtract( left ).angle(), 10, left );
+      let rightB = right.clone().toAngle( space.pointer.$subtract( right ).angle(), 10, right );
+
+      // draw face and eyes
+      //form.fillOnly("rgba(255, 255, 255, 0.5)").polygon( hull );
+      form.fill("#fff").points( [left, right], 20, "circle" );
+      form.fill("#123").points( [leftB, rightB], 5, "circle" );
+
+      // draw the hull and pts
+      //form.fill("#fff").points( hull, 5, "circle" );
+      form.fill("rgba(0,0,0,.5)").points( pts, 2, "circle" );
+      //form.fill("#f03").point( space.pointer, 10, "circle" );
+
+      // draw mouth
+      //form.strokeOnly("#000", 5).line( [left.$add(0,55), right.$add(0, 55)]);
+      
+    },
+    
+  });
+
+  //// ----
+  
+
+  space.bindMouse().bindTouch().play();
+
+})();
+(function() {
+
+let pts = new Group();
+
+// Confetti extends Pt to implement custom logic and rendering
+class Confetti extends Pt {
+  constructor( ...args ) {
+    super( ...args );
+    this.color = ["#f03", "#09f", "#0c6", "#fff"][ Util.randomInt(4) ];
+    this.size = Math.random()*7+2;
+    this.angle = Math.random() * Const.two_pi;
+    this.dir = (Math.random() > 0.5) ? 1 : -1;
+    this.shape = ["rect", "circle", "tri"][ Util.randomInt(3) ];
+  }
+
+  render( form ) {
+    if (this.y < space.size.y) {
+      this.y += 2/this.size + Math.random();
+      this.x += Math.random() - Math.random();
+      this.angle += this.dir * (Math.random()*Const.one_degree + Const.one_degree);
+      
+      if (this.shape == "tri" || this.shape == "rect") {
+        let shape = (this.shape == "tri") ? Triangle.fromCenter(this, this.size) : Rectangle.corners(Rectangle.fromCenter(this, this.size*2));
+        shape.rotate2D( this.angle, this );
+        form.fillOnly(this.color).polygon( shape );
+      } else {
+        form.fillOnly(this.color).point( this, this.size, "circle" );
+      }
+    }
+  }
+}
+
+
+space.add({ 
+  animate: (time, ftime) => {
+    // remove confetti if reaching the bottom or too many
+    if (pts.length > 1000 || (pts.length > 0 && pts[0].y > space.size.y)) pts.shift();
+
+    // add a confetti every second
+    if ( Math.floor(time%1000) > 980 ) pts.push( new Confetti(space.pointer) );
+    
+    // render the confetti
+    pts.forEach( p => p.render(form) );
+  },
+
+  action:( type, px, py ) => {
+
+    // add a point to the line when mouse moves
+    if (type == "move") pts.push( new Confetti(px, py) );  
+  } 
+});
+
+//// ----
+
+
+space.bindMouse().bindTouch().play();
+
+})();
+
+//***************
+
+    </script>
+  </body>
+</html>
